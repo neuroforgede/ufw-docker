@@ -2,7 +2,9 @@
 
 This is a fork of the original ufw-docker.
 
-For Docker Swarm it uses https://hub.docker.com/r/neuroforgede/ufw-docker-agent instead
+For Docker Swarm it uses https://hub.docker.com/r/neuroforgede/ufw-docker-agent instead.
+
+[![neuroforgede/ufw-docker-agent](https://img.shields.io/docker/pulls/neuroforgede/ufw-docker-agent)](https://hub.docker.com/r/neuroforgede/ufw-docker-agent)
 
 # Original README follows:
 To Fix The Docker and UFW Security Flaw Without Disabling Iptables
