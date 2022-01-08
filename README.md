@@ -1,3 +1,7 @@
+# FORK NOTICE
+
+This is a fork of the original ufw-docker which does not allow private network routing by default.
+
 To Fix The Docker and UFW Security Flaw Without Disabling Iptables
 ==================
 
