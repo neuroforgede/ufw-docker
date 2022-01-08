@@ -1,18 +1,8 @@
 # FORK NOTICE
 
-This is a fork of the original ufw-docker which does not allow private network routing by default.
+This is a fork of the original ufw-docker.
 
 For Docker Swarm it uses https://hub.docker.com/r/neuroforgede/ufw-docker-agent instead
-
-[![neuroforgede/ufw-docker-agent](https://img.shields.io/docker/pulls/neuroforgede/ufw-docker-agent)](https://hub.docker.com/r/neuroforgede/ufw-docker-agent)
-
-This is achieved by commenting out the following lines from the ufw rules from the original repo:
-
-```
--A DOCKER-USER -j RETURN -s 10.0.0.0/8
--A DOCKER-USER -j RETURN -s 172.16.0.0/12
--A DOCKER-USER -j RETURN -s 192.168.0.0/16
-```
 
 # Original README follows:
 To Fix The Docker and UFW Security Flaw Without Disabling Iptables
