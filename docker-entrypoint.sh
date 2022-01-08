@@ -4,7 +4,7 @@ set -euo pipefail
 [[ 0 -eq "$#" ]] && set -- start
 
 ufw_docker_agent=ufw-docker-agent
-ufw_docker_agent_image="${ufw_docker_agent_image:-neuroforgede/${ufw_docker_agent}:181003}"
+ufw_docker_agent_image="${ufw_docker_agent_image:-neuroforgede/${ufw_docker_agent}:0.1}"
 
 function ufw-allow-or-deny-service() {
     declare id="$1"
