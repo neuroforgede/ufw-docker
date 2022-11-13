@@ -3,14 +3,28 @@
 # -*- mode: ruby -*-
 # vi: set ft=ruby :
 
+ENV['VAGRANT_NO_PARALLEL']="true"
+
 Vagrant.configure('2') do |config|
 
-  config.vm.box = "chaifeng/ubuntu-20.04-docker-19.03.13"
-  #config.vm.box = "chaifeng/ubuntu-16.04-docker-18.03"
+  docker_version = "20.10.17"
+
+  ubuntu_version = File.readlines("Dockerfile").filter { |line|
+    line.start_with?("FROM ")
+  }.first.match(/\d\d\.\d\d/)[0]
+
+  config.vm.box = "chaifeng/ubuntu-#{ubuntu_version}-docker-#{docker_version}#{(`uname -m`.strip == "arm64")?"-arm64":""}"
+
+  #config.vm.box = "chaifeng/ubuntu-20.04-docker-20.10.17#{(`uname -m`.strip == "arm64")?"-arm64":""}"
 
   config.vm.provider 'virtualbox' do |vb|
     vb.memory = '1024'
     vb.default_nic_type = "virtio"
+  end
+
+  config.vm.provider 'parallels' do |prl|
+    prl.memory = '1024'
+    prl.check_guest_tools = false
   end
 
   ip_prefix="192.168.56"
@@ -57,15 +71,16 @@ Vagrant.configure('2') do |config|
   private_registry="#{ip_prefix}.130:5000"
 
   config.vm.define "master" do |master|
+    master_ip_address = "#{ip_prefix}.130"
     master.vm.hostname = "master"
-    master.vm.network "private_network", ip: "#{ip_prefix}.130"
+    master.vm.network "private_network", ip: "#{master_ip_address}"
 
-    master.vm.provision "unit-testing", type: 'shell', inline: <<-SHELL
+    master.vm.provision "unit-testing", preserve_order: true, type: 'shell', inline: <<-SHELL
         set -euo pipefail
         /vagrant/test.sh
     SHELL
 
-    master.vm.provision "docker-registry", type: 'docker' do |d|
+    master.vm.provision "docker-registry", preserve_order: true, type: 'docker' do |d|
       d.run "registry",
             image: "registry:2",
             args: "-p 5000:5000",
@@ -73,35 +88,38 @@ Vagrant.configure('2') do |config|
             daemonize: true
     end
 
-    ufw_docker_agent_image = "#{private_registry}/chaifeng/ufw-docker-agent:test"
+    ufw_docker_agent_image = "#{private_registry}/chaifeng/ufw-docker-agent:test-legacy"
 
-    master.vm.provision "docker-build-ufw-docker-agent", type: 'shell', inline: <<-SHELL
+    master.vm.provision "docker-build-ufw-docker-agent", preserve_order: true, type: 'shell', inline: <<-SHELL
       set -euo pipefail
-      docker build -t #{ufw_docker_agent_image} /vagrant
-      docker push #{ufw_docker_agent_image}
+      suffix="$(iptables --version | grep -o '\\(nf_tables\\|legacy\\)')"
+      docker build -t "#{ufw_docker_agent_image}-${suffix}" /vagrant
+      docker push "#{ufw_docker_agent_image}-${suffix}"
 
-      echo "export UFW_DOCKER_AGENT_IMAGE=#{ufw_docker_agent_image}" > /etc/profile.d/ufw-docker.sh
+      echo "export UFW_DOCKER_AGENT_IMAGE=#{ufw_docker_agent_image}-${suffix}" > /etc/profile.d/ufw-docker.sh
       echo "export DEBUG=true" >> /etc/profile.d/ufw-docker.sh
 
       echo "Defaults env_keep += UFW_DOCKER_AGENT_IMAGE" > /etc/sudoers.d/98_ufw-docker
       echo "Defaults env_keep += DEBUG" >> /etc/sudoers.d/98_ufw-docker
     SHELL
 
-    master.vm.provision "swarm-init", type: 'shell', inline: <<-SHELL
+    master.vm.provision "swarm-init", preserve_order: true, type: 'shell', inline: <<-SHELL
       set -euo pipefail
       docker info | fgrep 'Swarm: active' && exit 0
 
-      docker swarm init --advertise-addr eth1
+      docker swarm init --advertise-addr "#{master_ip_address}"
       docker swarm join-token worker --quiet > /vagrant/.vagrant/docker-join-token
     SHELL
 
-    master.vm.provision "build-webapp", type: 'shell', inline: <<-SHELL
+    master.vm.provision "build-webapp", preserve_order: true, type: 'shell', inline: <<-SHELL
         set -euo pipefail
         docker build -t #{private_registry}/chaifeng/hostname-webapp - <<\\DOCKERFILE
 FROM httpd:alpine
 
 RUN { echo '#!/bin/sh'; \\
     echo 'set -e; (echo -n "${name:-Hi} "; hostname;) > /usr/local/apache2/htdocs/index.html'; \\
+    echo 'grep "^Listen 7000" || echo Listen 7000 >> /usr/local/apache2/conf/httpd.conf'; \\
+    echo 'grep "^Listen 8080" || echo Listen 8080 >> /usr/local/apache2/conf/httpd.conf'; \\
     echo 'exec "$@"'; \\
     } > /entrypoint.sh; chmod +x /entrypoint.sh
 
@@ -111,7 +129,7 @@ DOCKERFILE
         docker push #{private_registry}/chaifeng/hostname-webapp
     SHELL
 
-    master.vm.provision "local-webapp", type: 'shell', inline: <<-SHELL
+    master.vm.provision "local-webapp", preserve_order: true, type: 'shell', inline: <<-SHELL
         set -euo pipefail
         for name in public:18080 local:8000; do
             webapp="${name%:*}_webapp"
@@ -125,7 +143,7 @@ DOCKERFILE
         ufw-docker allow public_webapp
     SHELL
 
-    master.vm.provision "multiple-network", type: 'shell', inline: <<-SHELL
+    master.vm.provision "multiple-network", preserve_order: true, type: 'shell', inline: <<-SHELL
       set -euo pipefail
       if ! docker network ls | grep -F foo-internal; then
           docker network create --internal foo-internal
@@ -148,7 +166,7 @@ DOCKERFILE
       ufw-docker allow internal-multinet-app 80 foo-internal
     SHELL
 
-    master.vm.provision "swarm-webapp", type: 'shell', inline: <<-SHELL
+    master.vm.provision "swarm-webapp", preserve_order: true, type: 'shell', inline: <<-SHELL
       set -euo pipefail
         for name in public:29090 local:9000; do
             webapp="${name%:*}_service"
@@ -159,6 +177,13 @@ DOCKERFILE
         done
 
         ufw-docker service allow public_service 80/tcp
+
+        docker service create --name "public_multiport" \
+            --publish "40080:80" --publish "47000:7000" --publish "48080:8080" \
+            --env name="public_multiport" --replicas 3 #{private_registry}/chaifeng/hostname-webapp
+
+        ufw-docker service allow public_multiport 80/tcp
+        ufw-docker service allow public_multiport 8080/tcp
     SHELL
   end
 
@@ -167,7 +192,7 @@ DOCKERFILE
       node.vm.hostname = "node#{ip}"
       node.vm.network "private_network", ip: "#{ip_prefix}.#{ 130 + ip }"
 
-      node.vm.provision "swarm-join", type: 'shell', inline: <<-SHELL
+      node.vm.provision "swarm-join", preserve_order: true, type: 'shell', inline: <<-SHELL
         set -euo pipefail
         docker info | fgrep 'Swarm: active' && exit 0
 
@@ -181,11 +206,16 @@ DOCKERFILE
     external.vm.hostname = "external"
     external.vm.network "private_network", ip: "#{ip_prefix}.127"
 
-    external.vm.provision "testing", type: 'shell', inline: <<-SHELL
+    external.vm.provision "testing", preserve_order: true, type: 'shell', inline: <<-SHELL
         set -euo pipefail
         set -x
         server="http://#{ip_prefix}.130"
-        function test-webapp() { timeout 3 curl --silent "$@"; }
+        function test-webapp() {
+          if timeout 3 curl --silent "$@"
+          then echo "Success: $*"
+          else echo "Cannot visit: $*"; return 1
+          fi
+        }
         test-webapp "$server:18080"
         ! test-webapp "$server:8000"
 
@@ -194,6 +224,10 @@ DOCKERFILE
 
         test-webapp "$server:29090"
         ! test-webapp "$server:9000"
+
+        test-webapp "$server:40080"
+        test-webapp "$server:48080"
+        ! test-webapp "$server:47000"
 
         echo "====================="
         echo "      TEST DONE      "
