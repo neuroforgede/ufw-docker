@@ -2,9 +2,7 @@
 
 This is a fork of the original ufw-docker.
 
-For Docker Swarm it uses https://hub.docker.com/r/neuroforgede/ufw-docker-agent instead.
-
-[![neuroforgede/ufw-docker-agent](https://img.shields.io/docker/pulls/neuroforgede/ufw-docker-agent)](https://hub.docker.com/r/neuroforgede/ufw-docker-agent)
+For Docker Swarm it used to use https://hub.docker.com/r/neuroforgede/ufw-docker-agent. Might use it again at some point, but Ubuntu 22.04 is incompatible.
 
 # Original README follows:
 To Fix The Docker and UFW Security Flaw Without Disabling Iptables
